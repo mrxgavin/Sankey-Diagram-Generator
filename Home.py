@@ -247,7 +247,7 @@ with advanced_settings:
         value=0.8,
         step=0.05
     )
-    show_labels = st.checkbox("Show Node Labels", value=False)
+    show_labels = st.checkbox("Show Node Labels", value=True)
 
 if st.sidebar.button("Generate Diagram"):
     # 传递 link_opacity 参数
