@@ -15,7 +15,8 @@ hide_streamlit_style = """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
 # Define the function to create Sankey diagram
-def create_sankey_diagram(gene_orders, font_size=10, colors=None, width=1000, height=600):
+# [修改] 增加了 show_labels 参数
+def create_sankey_diagram(gene_orders, font_size=10, colors=None, width=1000, height=600, show_labels=True):
     columns = len(gene_orders)
     nodes_per_column = max(len(order) for order in gene_orders)
 
@@ -50,28 +51,29 @@ def create_sankey_diagram(gene_orders, font_size=10, colors=None, width=1000, he
     value = []
     link_color = []
 
-    for col_idx in range(columns):
+    for col_idx in range(columns - 1):
         for gene in gene_orders[col_idx]:
-            if col_idx < columns - 1 and gene in gene_orders[col_idx + 1]:
+            if gene in gene_orders[col_idx + 1]:
                 source_idx = col_idx * nodes_per_column + gene_orders[col_idx].index(gene)
                 target_idx = (col_idx + 1) * nodes_per_column + gene_orders[col_idx + 1].index(gene)
+
                 source.append(source_idx)
                 target.append(target_idx)
                 value.append(1)
                 link_color.append(color_map[gene])
             else:
-                source_idx = target_idx = col_idx * nodes_per_column + gene_orders[col_idx].index(gene)
-                source.append(source_idx)
-                target.append(target_idx)
-                value.append(1)
-                link_color.append(white_color)
+                # 这个基因在下一列消失：就让它在这里结束，不画线
+                continue
+    
+    # [修改] 根据 show_labels 决定标签内容
+    node_labels = [f'{n}' for n in nodes] if show_labels else ["" for _ in nodes]
 
     fig = go.Figure(data=[go.Sankey(
         node=dict(
             pad=20,
             thickness=20,
-            line=dict(color="black", width=0.5),
-            label=[f'{n}' for n in nodes],
+            line=dict(color="black", width=0),
+            label=node_labels, # [修改] 使用处理过的 labels
             color=node_color,
             x=node_x,
             y=node_y
@@ -99,9 +101,8 @@ def create_sankey_diagram(gene_orders, font_size=10, colors=None, width=1000, he
     return fig
 
 
-
-
-def generate_matlab_code(gene_orders, colors=None):
+# [修改] 增加了 show_labels 参数
+def generate_matlab_code(gene_orders, colors=None, show_labels=True):
     if colors is None:
         colors = ["#ea5545", "#f46a9b", "#ef9b20", "#edbf33", "#ede15b", "#bdcf32", "#87bc45", "#27aeef", "#b33dc6", "#50e991"]
     genes = list(set(gene for order in gene_orders for gene in order))
@@ -143,7 +144,10 @@ def generate_matlab_code(gene_orders, colors=None):
             color = color_map[gene]
             y_position = nodes_per_column - node_idx
             matlab_code.append(f"rectangle('Position', [{col_idx - box_width/2}, {y_position - box_height/2}, {box_width}, {box_height}], 'FaceColor', '{color}', 'EdgeColor', '{color}', 'LineWidth', 1.5);")
-            matlab_code.append(f"text({col_idx}, {y_position}, '{gene}', 'Color', 'k', 'FontWeight', 'bold', 'HorizontalAlignment', 'center', 'VerticalAlignment', 'middle');")
+            
+            # [修改] 仅当 show_labels 为 True 时生成文字代码
+            if show_labels:
+                matlab_code.append(f"text({col_idx}, {y_position}, '{gene}', 'Color', 'k', 'FontWeight', 'bold', 'HorizontalAlignment', 'center', 'VerticalAlignment', 'middle');")
     
     col_labels = ['Cell ' + str(i + 1) for i in range(columns)]
     col_labels_str = ', '.join(f"'{label}'" for label in col_labels)
@@ -188,16 +192,20 @@ with advanced_settings:
     font_size = st.slider("Font Size", min_value=5, max_value=50, value=15)
     width = st.slider("Diagram Width", min_value=400, max_value=1600, value=1000)
     height = st.slider("Diagram Height", min_value=300, max_value=1200, value=600)
+    # [修改] 添加勾选项
+    show_labels = st.checkbox("Show Node Labels", value=True)
 
 if st.sidebar.button("Generate Diagram"):
-    fig = create_sankey_diagram(gene_orders, font_size=font_size, width=width, height=height)
+    # [修改] 传递 show_labels 参数
+    fig = create_sankey_diagram(gene_orders, font_size=font_size, width=width, height=height, show_labels=show_labels)
     st.plotly_chart(fig, use_container_width=True)
 
     # Display the source code
+    # [修改] 更新下载的 Python 源码，包含 show_labels 逻辑
     source_code = f'''
 import plotly.graph_objects as go
 
-def create_sankey_diagram(gene_orders, font_size=10, colors=None, width=1000, height=600):
+def create_sankey_diagram(gene_orders, font_size=10, colors=None, width=1000, height=600, show_labels=True):
     columns = len(gene_orders)
     nodes_per_column = max(len(order) for order in gene_orders)
 
@@ -241,12 +249,14 @@ def create_sankey_diagram(gene_orders, font_size=10, colors=None, width=1000, he
                 value.append(1)
                 link_color.append(color_map[gene])
 
+    node_labels = [f'{{n}}' for n in nodes] if show_labels else ["" for _ in nodes]
+
     fig = go.Figure(data=[go.Sankey(
         node=dict(
             pad=20,
             thickness=20,
             line=dict(color="black", width=0.5),
-            label=[f'{{n}}' for n in nodes],
+            label=node_labels,
             color=node_color,
             x=node_x,
             y=node_y
@@ -275,10 +285,11 @@ def create_sankey_diagram(gene_orders, font_size=10, colors=None, width=1000, he
 
 gene_orders = {gene_orders}
 
-create_sankey_diagram(gene_orders, font_size={font_size}, width={width}, height={height})
+# Generating diagram
+create_sankey_diagram(gene_orders, font_size={font_size}, width={width}, height={height}, show_labels={show_labels})
 '''
     st.download_button("Download Python Code", data=source_code, file_name="sankey_diagram.py", mime="text/plain")
 
-
-    matlab_code = generate_matlab_code(gene_orders)
+    # [修改] 传递 show_labels 参数生成 Matlab 代码
+    matlab_code = generate_matlab_code(gene_orders, show_labels=show_labels)
     st.download_button("Download MATLAB Code", data=matlab_code, file_name="sankey_diagram.m", mime="text/plain")
